@@ -1,24 +1,79 @@
-
 const express = require("express");
 const app = express();
 
 const cors = require("cors");
 const dotenv = require("dotenv");
+const { MongoClient, ObjectId } = require("mongodb");
 
 app.use(cors());
 app.use(express.json());
 dotenv.config();
 
 const port = process.env.PORT;
+const mongo_uri = process.env.MONGODB_URI;
 
-app.get("/", (req, res)=>{
-    res.send("Hello World!");
-})
+const client = new MongoClient(mongo_uri);
 
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
 
-app.listen(port , ()=>{
-    console.log(`Sever Successfully run on port-${port}`)
-})
+const run = async () => {
+  const db = client.db("chef-world");
+  const allUserCollection = client.db("chef-world-users");
 
+  const allRecipeCollection = db.collection("all-recipe");
+  const usersCollection = allUserCollection.collection("users");
 
+  // get all recipe for everyone
+  app.get("/recipes", async (req, res) => {
+    try {
+      const result = await allRecipeCollection.find().toArray();
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ massage: err.massage });
+    }
+  });
 
+  // get recipe with id
+  app.get("/recipe/:id", async (req, res) => {
+    try {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid ID!" });
+      }
+      const result = await allRecipeCollection.findOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+
+  // get recipes with email
+  app.get("/my-recipes", async (req, res) => {
+    try {
+      const userEmail = req.query.email;
+
+      if (!userEmail) {
+        return res
+          .status(400)
+          .send({ message: "Email query parameter is required" });
+      }
+      const result = await allRecipeCollection
+        .find({ authorEmail: userEmail })
+        .toArray();
+
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+};
+
+run();
+
+app.listen(port, () => {
+  console.log(`Sever Successfully run on port-${port}`);
+});
