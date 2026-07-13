@@ -51,11 +51,10 @@ const run = async () => {
     }
   });
 
-  // get recipes with email
+  // get my-recipe with email
   app.get("/my-recipes", async (req, res) => {
     try {
       const userEmail = req.query.email;
-
       if (!userEmail) {
         return res
           .status(400)
@@ -68,6 +67,34 @@ const run = async () => {
       res.send(result);
     } catch (err) {
       res.status(500).send({ message: err.message });
+    }
+  });
+
+  // delete my-recipe
+  app.delete("/delete-my-recipe/:id", async (req, res) => {
+    try {
+      const id = req.params.id;
+      const userEmail = req.query.email;
+
+      if (!userEmail) {
+        return res.status(400).send({
+          success: false,
+          message: "Unauthorized access! Email is required.",
+        });
+      }
+
+      const result = await allRecipeCollection.deleteOne({
+        _id: new ObjectId(id),
+        authorEmail: userEmail,
+      });
+
+      if (result.deletedCount === 1) {
+        res.send({ success: true, message: "Recipe deleted successfully!" });
+      } else {
+        res.status(404).send({ success: false, message: "Recipe not found!" });
+      }
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
     }
   });
 };
