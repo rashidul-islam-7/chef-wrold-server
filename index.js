@@ -23,7 +23,7 @@ const run = async () => {
   const allUserCollection = client.db("chef-world-users");
 
   const allRecipeCollection = db.collection("all-recipe");
-  const usersCollection = allUserCollection.collection("users");
+  const usersCollection = allUserCollection.collection("user");
 
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
@@ -74,18 +74,9 @@ const run = async () => {
   app.delete("/delete-my-recipe/:id", async (req, res) => {
     try {
       const id = req.params.id;
-      const userEmail = req.query.email;
-
-      if (!userEmail) {
-        return res.status(400).send({
-          success: false,
-          message: "Unauthorized access! Email is required.",
-        });
-      }
 
       const result = await allRecipeCollection.deleteOne({
         _id: new ObjectId(id),
-        authorEmail: userEmail,
       });
 
       if (result.deletedCount === 1) {
@@ -95,6 +86,52 @@ const run = async () => {
       }
     } catch (err) {
       res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // post recipe
+  app.post("/add-recipe", async (req, res) => {
+    try {
+      const recipe = req.body;
+      const email = recipe.authorEmail;
+
+      if (!email) {
+        return res.status(400).send({ message: "Author email  is required!" });
+      }
+      const user = await usersCollection.findOne({ email });
+      const countRecipe = await allRecipeCollection.countDocuments({
+        authorEmail: email,
+      });
+
+      if (!user?.isPremium && countRecipe >= 2) {
+        return res.status(403).send({
+          message:
+            "You have reached the free limit. Upgrade to Premium to add unlimited recipes",
+        });
+      }
+      const result = await allRecipeCollection.insertOne(recipe);
+      res.status(201).send(result);
+    } catch (error) {
+      res.status(500).send({ message: error.message });
+    }
+  });
+
+  //update recipe
+  app.patch("/update-recipe/:id", async (req, res) => {
+    try {
+      const id = req.params.id;
+      const updateRecipe = req.body;
+      //check ID
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid Recipe ID!" });
+      }
+      const result = await allRecipeCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateRecipe },
+      );
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
     }
   });
 };
