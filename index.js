@@ -24,6 +24,8 @@ const run = async () => {
 
   const allRecipeCollection = db.collection("all-recipe");
   const usersCollection = allUserCollection.collection("user");
+  const myPurchasedRecipesCollection = db.collection("my-purchased-recipes");
+  const paymentsCollection = db.collection("payments");
 
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
@@ -132,6 +134,64 @@ const run = async () => {
       res.send(result);
     } catch (err) {
       res.status(500).send({ message: err.message });
+    }
+  });
+
+  // premium user subscription api
+  app.post("/premium-user-subscription", async (req, res) => {
+    try {
+      const { transactionId, userId, userEmail, amount, paymentStatus } =
+        req.body;
+
+      if (
+        !transactionId ||
+        !userId ||
+        !userEmail ||
+        !amount ||
+        !paymentStatus
+      ) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Missing required fields" });
+      }
+
+      if (!ObjectId.isValid(userId)) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Invalid User ID" });
+      }
+
+      const isExist = await paymentsCollection.findOne({ transactionId });
+      if (isExist) {
+        return res
+          .status(200)
+          .send({ success: true, message: "Payment already recorded" });
+      }
+
+      const paymentData = {
+        userEmail,
+        userId: new ObjectId(userId),
+        amount: parseFloat(amount),
+        recipeId: null,
+        transactionId,
+        paymentStatus,
+        paidAt: new Date(),
+      };
+
+      const result = await paymentsCollection.insertOne(paymentData);
+
+      await usersCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { isPremium: true } },
+      );
+
+      res.status(201).send({
+        success: true,
+        message: "Premium membership activated successfully!",
+        insertedId: result.insertedId,
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
     }
   });
 };
