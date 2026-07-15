@@ -195,53 +195,6 @@ const run = async () => {
     }
   });
 
-  // // purchase recipe api
-  // app.post("/purchase-recipe-payment", async (req, res) => {
-  //   try {
-  //     const {
-  //       sessionId,
-  //       userId,
-  //       recipeId,
-  //       recipeName,
-  //       authorName,
-  //       recipeImage,
-  //       price,
-  //     } = req.body;
-  //     if (!sessionId || !userId || !recipeId) {
-  //       return res
-  //         .status(400)
-  //         .send({ success: false, message: "Missing required fields" });
-  //     }
-
-  //     const isExist = await purchasedRecipesCollection.findOne({ sessionId });
-  //     if (isExist) {
-  //       return res.status(200).send({
-  //         success: true,
-  //         message: "Recipe purchase already recorded",
-  //       });
-  //     }
-
-  //     const result = await purchasedRecipesCollection.insertOne({
-  //       sessionId,
-  //       userId,
-  //       recipeId,
-  //       recipeName,
-  //       authorName,
-  //       recipeImage,
-  //       price: Number(price),
-  //       createdAt: new Date(),
-  //     });
-
-  //     res.status(201).send({
-  //       success: true,
-  //       message: "Recipe purchased successfully",
-  //       insertedId: result.insertedId,
-  //     });
-  //   } catch (err) {
-  //     res.status(500).send({ message: err.message });
-  //   }
-  // });
-
   // purchase recipe api
   app.post("/purchase-recipe-payment", async (req, res) => {
     try {
@@ -257,12 +210,10 @@ const run = async () => {
       } = req.body;
 
       if (!sessionId || !userId || !recipeId) {
-        return res
-          .status(400)
-          .send({
-            success: false,
-            message: `Missing required fields. Received: sessionId=${sessionId}, userId=${userId}, recipeId=${recipeId}`,
-          });
+        return res.status(400).send({
+          success: false,
+          message: `Missing required fields. Received: sessionId=${sessionId}, userId=${userId}, recipeId=${recipeId}`,
+        });
       }
 
       const isExist = await myPurchasedRecipesCollection.findOne({ sessionId });
@@ -293,7 +244,30 @@ const run = async () => {
         insertedId: result.insertedId,
       });
     } catch (err) {
-      console.error("EXPRESS DATABASE ERROR:", err); 
+      console.error("EXPRESS DATABASE ERROR:", err);
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // get my purchased recipes with userId
+  app.get("/my-purchased-recipes/:userId", async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      if (!userId) {
+        return res
+          .status(400)
+          .send({ success: false, message: "User ID is required" });
+      }
+
+      const query = { userId: userId };
+      const result = await myPurchasedRecipesCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.status(200).send(result);
+    } catch (err) {
+      console.error("Error fetching purchased recipes:", err);
       res.status(500).send({ success: false, message: err.message });
     }
   });
