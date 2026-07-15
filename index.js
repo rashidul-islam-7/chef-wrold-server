@@ -27,6 +27,8 @@ const run = async () => {
   const myPurchasedRecipesCollection = db.collection("my-purchased-recipes");
   const paymentsCollection = db.collection("payments");
 
+  const likesCollection = db.collection("likes");
+
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
     try {
@@ -269,6 +271,69 @@ const run = async () => {
     } catch (err) {
       console.error("Error fetching purchased recipes:", err);
       res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // like 
+  app.put("/recipes/:id/like", async (req, res) => {
+    try {
+      const recipeId = req.params.id;
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
+      }
+
+      const existingLike = await likesCollection.findOne({ recipeId, userId });
+
+      let updatedCountModifier = 1;
+      let isLikedNow = true;
+
+      if (existingLike) {
+        await likesCollection.deleteOne({ _id: existingLike._id });
+        updatedCountModifier = -1;
+        isLikedNow = false;
+      } else {
+        await likesCollection.insertOne({
+          recipeId,
+          userId,
+          createdAt: new Date(),
+        });
+      }
+
+      const updateResult = await allRecipeCollection.findOneAndUpdate(
+        { _id: new ObjectId(recipeId) },
+        { $inc: { likesCount: updatedCountModifier } },
+        { returnDocument: "after" },
+      );
+
+      const updatedRecipe = updateResult.value || updateResult;
+
+      res.status(200).json({
+        success: true,
+        likesCount: updatedRecipe?.likesCount || 0,
+        isLiked: isLikedNow,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Server Error" });
+    }
+  });
+
+  // unlike status
+  app.get("/recipes/:id/like-status", async (req, res) => {
+    try {
+      const recipeId = req.params.id;
+      const { userId } = req.query;
+
+      if (!userId) {
+        return res.json({ isLiked: false });
+      }
+
+      const existingLike = await likesCollection.findOne({ recipeId, userId });
+      res.json({ isLiked: !!existingLike });
+    } catch (error) {
+      res.json({ isLiked: false });
     }
   });
 };
