@@ -459,6 +459,51 @@ const run = async () => {
       res.status(500).send({ success: false, message: err.message });
     }
   });
+
+  // dashboard api
+  app.get("/user-stats/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      if (!userId) {
+        return res
+          .status(400)
+          .send({ success: false, message: "User ID is required" });
+      }
+      const user = await usersCollection.findOne({ _id: new ObjectId(userId) });
+      if (!user) {
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
+      }
+      const userEmail = user.email;
+
+      const totalRecipes = await allRecipeCollection.countDocuments({
+        authorEmail: userEmail,
+      });
+      const recipes = await allRecipeCollection
+        .find({ authorEmail: userEmail })
+        .toArray();
+      const totalLikes = recipes.reduce(
+        (sum, recipe) => sum + (recipe.likesCount || 0),
+        0,
+      );
+      const totalFavorites = await favoritesCollection.countDocuments({
+        userId: userId,
+      });
+      res.status(200).send({
+        success: true,
+        stats: {
+          totalRecipes,
+          totalLikes,
+          totalFavorites,
+        },
+      });
+    } catch (err) {
+      console.error("Error fetching user stats:", err);
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
 };
 
 run();
