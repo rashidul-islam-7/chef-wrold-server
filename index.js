@@ -28,6 +28,7 @@ const run = async () => {
   const paymentsCollection = db.collection("payments");
 
   const likesCollection = db.collection("likes");
+  const favoritesCollection = db.collection("favorites");
 
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
@@ -274,7 +275,7 @@ const run = async () => {
     }
   });
 
-  // like 
+  // like
   app.put("/recipes/:id/like", async (req, res) => {
     try {
       const recipeId = req.params.id;
@@ -334,6 +335,128 @@ const run = async () => {
       res.json({ isLiked: !!existingLike });
     } catch (error) {
       res.json({ isLiked: false });
+    }
+  });
+
+  app.get("/favorites", async (req, res) => {
+    try {
+      const { userId, recipeId } = req.query;
+
+      if (!userId) {
+        return res
+          .status(400)
+          .send({ message: "User ID (userId) is required!" });
+      }
+      if (recipeId) {
+        const favorite = await favoritesCollection.findOne({
+          userId,
+          recipeId,
+        });
+        return res.send({ isFavorite: !!favorite });
+      }
+      const userFavorites = await favoritesCollection
+        .find({ userId })
+        .toArray();
+
+      const favoriteRecipeIds = userFavorites.map(
+        (fav) => new ObjectId(fav.recipeId),
+      );
+
+      const favoriteRecipes = await allRecipeCollection
+        .find({ _id: { $in: favoriteRecipeIds } })
+        .toArray();
+
+      res.send(favoriteRecipes);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+
+  app.put("/favorites", async (req, res) => {
+    try {
+      const { userId, recipeId } = req.body;
+
+      if (!userId || !recipeId) {
+        return res
+          .status(400)
+          .send({ message: "userId and recipeId are required!" });
+      }
+
+      if (!ObjectId.isValid(recipeId)) {
+        return res.status(400).send({ message: "Invalid Recipe ID!" });
+      }
+
+      const existingFavorite = await favoritesCollection.findOne({
+        userId,
+        recipeId,
+      });
+
+      let updatedCountModifier = 1;
+      let isFavoritedNow = true;
+
+      if (existingFavorite) {
+        await favoritesCollection.deleteOne({ _id: existingFavorite._id });
+        updatedCountModifier = -1;
+        isFavoritedNow = false;
+      } else {
+        await favoritesCollection.insertOne({
+          userId,
+          recipeId,
+          createdAt: new Date(),
+        });
+        updatedCountModifier = 1;
+      }
+
+      await allRecipeCollection.updateOne(
+        { _id: new ObjectId(recipeId) },
+        { $inc: { favoriteCount: updatedCountModifier } },
+      );
+
+      res.status(200).send({
+        success: true,
+        isFavorite: isFavoritedNow,
+        message: isFavoritedNow
+          ? "Recipe added to favorites"
+          : "Recipe removed from favorites",
+      });
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+
+  app.delete("/remove-favorite/:id", async (req, res) => {
+    try {
+      const recipeId = req.params.id;
+      const { userId } = req.body;
+
+      if (!userId || !recipeId) {
+        return res.status(400).send({
+          success: false,
+          message: "userId and recipeId are required!",
+        });
+      }
+
+      const deleteResult = await favoritesCollection.deleteOne({
+        userId: userId,
+        recipeId: recipeId,
+      });
+
+      if (deleteResult.deletedCount === 0) {
+        return res
+          .status(404)
+          .send({ success: false, message: "Favorite recipe not found!" });
+      }
+      await allRecipeCollection.updateOne(
+        { _id: new ObjectId(recipeId) },
+        { $inc: { favoriteCount: -1 } },
+      );
+
+      res.status(200).send({
+        success: true,
+        message: "Recipe permanently removed from favorites",
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
     }
   });
 };
