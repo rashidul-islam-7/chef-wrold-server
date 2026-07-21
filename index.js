@@ -30,6 +30,8 @@ const run = async () => {
   const likesCollection = db.collection("likes");
   const favoritesCollection = db.collection("favorites");
 
+  const reportsCollection = db.collection("reports");
+
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
     try {
@@ -502,6 +504,32 @@ const run = async () => {
     } catch (err) {
       console.error("Error fetching user stats:", err);
       res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  //-------------- admin routes api -------------
+  // Admin Dashboard Overview API
+  app.get("/admin/dashboard", async (req, res) => {
+    try {
+      const [totalUsers, totalRecipes, totalPremiumMembers, totalReports] =
+        await Promise.all([
+          usersCollection.countDocuments(),
+          allRecipeCollection.countDocuments(),
+          usersCollection.countDocuments({ isPremium: true }),
+          reportsCollection.countDocuments(),
+        ]);
+
+      res.status(200).send({
+        totalUsers,
+        totalRecipes,
+        totalPremiumMembers,
+        totalReports,
+      });
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err);
+      res
+        .status(500)
+        .send({ message: "Failed to fetch dashboard overview metrics." });
     }
   });
 };
