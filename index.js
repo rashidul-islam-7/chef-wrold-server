@@ -78,7 +78,7 @@ const run = async () => {
   });
 
   // delete my-recipe
-  app.delete("/delete-my-recipe/:id", async (req, res) => {
+  app.delete("/delete-recipe/:id", async (req, res) => {
     try {
       const id = req.params.id;
 
@@ -530,6 +530,73 @@ const run = async () => {
       res
         .status(500)
         .send({ message: "Failed to fetch dashboard overview metrics." });
+    }
+  });
+
+  // admin users list api
+  app.get("/admin/users", async (req, res) => {
+    try {
+      const users = await usersCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(users);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+
+  // User Block API
+  app.patch("/admin/users/block/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid ID format" });
+      }
+
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { isBlocked: true } },
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      res.send({
+        success: true,
+        message: "User blocked successfully",
+        result,
+      });
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+
+  // User Unblock API
+  app.patch("/admin/users/unblock/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid ID format" });
+      }
+
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { isBlocked: false } },
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      res.send({
+        success: true,
+        message: "User unblocked successfully",
+        result,
+      });
+    } catch (err) {
+      res.status(500).send({ message: err.message });
     }
   });
 };
