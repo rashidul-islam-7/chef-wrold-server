@@ -31,6 +31,7 @@ const run = async () => {
   const favoritesCollection = db.collection("favorites");
 
   const reportsCollection = db.collection("reports");
+  const featuredRecipesCollection = db.collection("featuredRecipes");
 
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
@@ -595,6 +596,94 @@ const run = async () => {
         message: "User unblocked successfully",
         result,
       });
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  });
+
+  // recipe feature add and delete toggle
+  app.patch("/recipes/:id/feature", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ success: false, message: "Invalid ID" });
+      }
+
+      const recipe = await allRecipeCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!recipe) {
+        return res
+          .status(404)
+          .send({ success: false, message: "Recipe not found" });
+      }
+
+      const featured = await featuredRecipesCollection.findOne({
+        recipeId: id,
+      });
+
+      if (featured) {
+        await featuredRecipesCollection.deleteOne({ recipeId: id });
+        return res.send({
+          success: true,
+          featured: false,
+          message: "Recipe removed from featured",
+        });
+      }
+
+      await featuredRecipesCollection.insertOne({
+        recipeId: id,
+        featuredAt: new Date(),
+      });
+
+      res.send({
+        success: true,
+        featured: true,
+        message: "Recipe added to featured",
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // get featured recipes
+  app.get("/featured-recipes", async (req, res) => {
+    try {
+      const recipes = await featuredRecipesCollection
+        .aggregate([
+          {
+            $addFields: {
+              recipeObjectId: { $toObjectId: "$recipeId" },
+            },
+          },
+          {
+            $lookup: {
+              from: "allRecipe",
+              localField: "recipeObjectId",
+              foreignField: "_id",
+              as: "recipeDetails",
+            },
+          },
+          { $unwind: "$recipeDetails" },
+          {
+            $project: {
+              _id: "$recipeDetails._id",
+              recipeId: "$recipeId",
+              title: "$recipeDetails.title",
+              image: "$recipeDetails.image",
+              category: "$recipeDetails.category",
+              cuisine: "$recipeDetails.cuisine",
+              author: "$recipeDetails.author",
+              featuredAt: 1,
+            },
+          },
+          { $sort: { featuredAt: -1 } },
+        ])
+        .toArray();
+
+      res.send(recipes);
     } catch (err) {
       res.status(500).send({ message: err.message });
     }
