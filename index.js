@@ -688,6 +688,144 @@ const run = async () => {
       res.status(500).send({ message: err.message });
     }
   });
+
+  // ==================== RECIPE REPORT SYSTEM ====================
+
+  // 1. Submit a Recipe Report (User)
+  app.post("/reports", async (req, res) => {
+    try {
+      const { recipeId, userId, userName, userEmail, reason, details } =
+        req.body;
+
+      if (!recipeId || !reason) {
+        return res.status(400).send({
+          success: false,
+          message: "Recipe ID and Reason are required.",
+        });
+      }
+
+      const reportData = {
+        recipeId,
+        userId: userId || "Anonymous",
+        userName: userName || "Unknown User",
+        userEmail: userEmail || "N/A",
+        reason, // "Spam", "Offensive Content", "Copyright Issue"
+        details: details || "",
+        reportedAt: new Date(),
+      };
+
+      const result = await reportsCollection.insertOne(reportData);
+
+      res.status(201).send({
+        success: true,
+        message: "Report submitted successfully!",
+        insertedId: result.insertedId,
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // 2. Get All Reports with Recipe Details (Admin)
+  app.get("/reports", async (req, res) => {
+    try {
+      const reports = await reportsCollection
+        .aggregate([
+          {
+            $addFields: {
+              recipeObjectId: { $toObjectId: "$recipeId" },
+            },
+          },
+          {
+            $lookup: {
+              from: "allRecipe",
+              localField: "recipeObjectId",
+              foreignField: "_id",
+              as: "recipeDetails",
+            },
+          },
+          {
+            $unwind: {
+              path: "$recipeDetails",
+              preserveNullAndEmptyArrays: true, // রেসিপি ডিলিট হয়ে গেলেও যেন ক্র্যাশ না করে
+            },
+          },
+          { $sort: { reportedAt: -1 } },
+        ])
+        .toArray();
+
+      res.send(reports);
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // 3. Dismiss Report (Admin Action - Deletes ONLY the report)
+  app.delete("/reports/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!ObjectId.isValid(id)) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Invalid Report ID" });
+      }
+
+      const result = await reportsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      if (result.deletedCount === 0) {
+        return res
+          .status(404)
+          .send({ success: false, message: "Report not found" });
+      }
+
+      res.send({
+        success: true,
+        message: "Report dismissed successfully. Recipe remains intact.",
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // 4. Remove Recipe & Clear Related Reports (Admin Action - Deletes Recipe + Reports)
+  app.delete("/reports/recipe/:recipeId", async (req, res) => {
+    try {
+      const { recipeId } = req.params;
+
+      if (!ObjectId.isValid(recipeId)) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Invalid Recipe ID" });
+      }
+
+      // ১. মূল রেসিপি রিমুভ
+      const recipeDeleteResult = await allRecipeCollection.deleteOne({
+        _id: new ObjectId(recipeId),
+      });
+
+      // ২. Featured recipes তালিকায় থাকলে সেখান থেকেও রিমুভ (Optional/Safe)
+      await featuredRecipesCollection.deleteOne({ recipeId: recipeId });
+
+      // ৩. ঐ রেসিপির বিরুদ্ধে থাকা সমস্ত রিপোর্ট ক্লিনআপ
+      await reportsCollection.deleteMany({ recipeId: recipeId });
+
+      if (recipeDeleteResult.deletedCount === 0) {
+        return res
+          .status(404)
+          .send({ success: false, message: "Recipe not found" });
+      }
+
+      res.send({
+        success: true,
+        message: "Recipe and associated reports removed successfully.",
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
 };
 
 run();
