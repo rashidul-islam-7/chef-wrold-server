@@ -1,3 +1,4 @@
+const paginate = require("./paginate");
 const express = require("express");
 const app = express();
 
@@ -37,10 +38,21 @@ const run = async () => {
   // get all recipe for everyone
   app.get("/recipes", async (req, res) => {
     try {
-      const result = await allRecipeCollection.find().toArray();
-      res.send(result);
+      const limit = Number(req.query.limit) || 10;
+      const page = Number(req.query.page) || 1;
+
+      const total_data = await allRecipeCollection.countDocuments();
+      const totalPage = Math.ceil(total_data / limit);
+      const skip = (page - 1) * limit;
+
+      const data = await allRecipeCollection
+        .find()
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+      res.send({ totalPage, skip, page, data });
     } catch (err) {
-      res.status(500).send({ massage: err.massage });
+      res.status(500).send({ message: err.message });
     }
   });
 
@@ -829,9 +841,12 @@ const run = async () => {
     }
   });
 
-  // Get all merged transactions (Premium + Purchased Recipes) for Admin
   app.get("/admin/transactions", async (req, res) => {
     try {
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
+
       // Fetch Premium Payments
       const premiumPayments = await paymentsCollection.find().toArray();
 
@@ -862,12 +877,32 @@ const run = async () => {
         paidAt: r.createdAt || new Date(),
       }));
 
-      // Combine and Sort by newest first
+      // 1. Combine and Sort by newest first
       const allTransactions = [...formattedPremium, ...formattedRecipes].sort(
         (a, b) => new Date(b.paidAt) - new Date(a.paidAt),
       );
 
-      res.status(200).send(allTransactions);
+      // 2. Calculate Total Data & Pages from combined list
+      const total_data = allTransactions.length;
+      const totalPage = Math.ceil(total_data / limit) || 1;
+
+      // 3. Slice the data according to current page & limit
+      const paginatedData = allTransactions.slice(skip, skip + limit);
+      const totalRevenue = allTransactions.reduce(
+        (sum, item) => sum + (Number(item.amount) || 0),
+        0,
+      );
+
+      // 4. Send response with pagination metadata
+      res.status(200).send({
+        success: true,
+        total_data,
+        totalPage,
+        page,
+        limit,
+        totalRevenue,
+        data: paginatedData,
+      });
     } catch (err) {
       console.error("Error fetching transactions:", err);
       res.status(500).send({ success: false, message: err.message });
