@@ -24,6 +24,7 @@ const run = async () => {
 
   const allRecipeCollection = db.collection("all-recipe");
   const usersCollection = allUserCollection.collection("user");
+
   const myPurchasedRecipesCollection = db.collection("my-purchased-recipes");
   const paymentsCollection = db.collection("payments");
 
@@ -691,7 +692,7 @@ const run = async () => {
 
   // ==================== RECIPE REPORT SYSTEM ====================
 
-  // 1. Submit a Recipe Report (User)
+  // Submit a Recipe Report (User)
   app.post("/reports", async (req, res) => {
     try {
       const { recipeId, userId, userName, userEmail, reason, details } =
@@ -709,7 +710,7 @@ const run = async () => {
         userId: userId || "Anonymous",
         userName: userName || "Unknown User",
         userEmail: userEmail || "N/A",
-        reason, // "Spam", "Offensive Content", "Copyright Issue"
+        reason,
         details: details || "",
         reportedAt: new Date(),
       };
@@ -726,19 +727,25 @@ const run = async () => {
     }
   });
 
-  // 2. Get All Reports with Recipe Details (Admin)
+  // Get All Reports with Recipe Details (Admin)
   app.get("/reports", async (req, res) => {
     try {
       const reports = await reportsCollection
         .aggregate([
           {
             $addFields: {
-              recipeObjectId: { $toObjectId: "$recipeId" },
+              recipeObjectId: {
+                $cond: {
+                  if: { $eq: [{ $type: "$recipeId" }, "string"] },
+                  then: { $toObjectId: "$recipeId" },
+                  else: "$recipeId",
+                },
+              },
             },
           },
           {
             $lookup: {
-              from: "allRecipe",
+              from: "all-recipe",
               localField: "recipeObjectId",
               foreignField: "_id",
               as: "recipeDetails",
@@ -747,7 +754,7 @@ const run = async () => {
           {
             $unwind: {
               path: "$recipeDetails",
-              preserveNullAndEmptyArrays: true, // রেসিপি ডিলিট হয়ে গেলেও যেন ক্র্যাশ না করে
+              preserveNullAndEmptyArrays: true,
             },
           },
           { $sort: { reportedAt: -1 } },
@@ -759,8 +766,7 @@ const run = async () => {
       res.status(500).send({ success: false, message: err.message });
     }
   });
-
-  // 3. Dismiss Report (Admin Action - Deletes ONLY the report)
+  // Dismiss Report (Admin Action)
   app.delete("/reports/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -783,14 +789,14 @@ const run = async () => {
 
       res.send({
         success: true,
-        message: "Report dismissed successfully. Recipe remains intact.",
+        message: "Report dismissed successfully.",
       });
     } catch (err) {
       res.status(500).send({ success: false, message: err.message });
     }
   });
 
-  // 4. Remove Recipe & Clear Related Reports (Admin Action - Deletes Recipe + Reports)
+  // Remove Recipe & Clear Related Reports
   app.delete("/reports/recipe/:recipeId", async (req, res) => {
     try {
       const { recipeId } = req.params;
@@ -801,15 +807,11 @@ const run = async () => {
           .send({ success: false, message: "Invalid Recipe ID" });
       }
 
-      // ১. মূল রেসিপি রিমুভ
       const recipeDeleteResult = await allRecipeCollection.deleteOne({
         _id: new ObjectId(recipeId),
       });
 
-      // ২. Featured recipes তালিকায় থাকলে সেখান থেকেও রিমুভ (Optional/Safe)
       await featuredRecipesCollection.deleteOne({ recipeId: recipeId });
-
-      // ৩. ঐ রেসিপির বিরুদ্ধে থাকা সমস্ত রিপোর্ট ক্লিনআপ
       await reportsCollection.deleteMany({ recipeId: recipeId });
 
       if (recipeDeleteResult.deletedCount === 0) {
@@ -823,6 +825,51 @@ const run = async () => {
         message: "Recipe and associated reports removed successfully.",
       });
     } catch (err) {
+      res.status(500).send({ success: false, message: err.message });
+    }
+  });
+
+  // Get all merged transactions (Premium + Purchased Recipes) for Admin
+  app.get("/admin/transactions", async (req, res) => {
+    try {
+      // Fetch Premium Payments
+      const premiumPayments = await paymentsCollection.find().toArray();
+
+      // Fetch Purchased Recipes Payments
+      const recipePayments = await myPurchasedRecipesCollection
+        .find()
+        .toArray();
+
+      // Standardize Premium Transactions
+      const formattedPremium = premiumPayments.map((p) => ({
+        _id: p._id,
+        userEmail: p.userEmail || "N/A",
+        amount: p.amount || 0,
+        type: "Premium Membership",
+        transactionId: p.transactionId || "N/A",
+        paymentStatus: p.paymentStatus || "succeeded",
+        paidAt: p.paidAt || p.createdAt || new Date(),
+      }));
+
+      // Standardize Recipe Purchase Transactions
+      const formattedRecipes = recipePayments.map((r) => ({
+        _id: r._id,
+        userEmail: r.userEmail || r.userId || "N/A",
+        amount: r.price || 0,
+        type: `Recipe: ${r.recipeName || "Purchased Recipe"}`,
+        transactionId: r.transactionId || "N/A",
+        paymentStatus: "succeeded",
+        paidAt: r.createdAt || new Date(),
+      }));
+
+      // Combine and Sort by newest first
+      const allTransactions = [...formattedPremium, ...formattedRecipes].sort(
+        (a, b) => new Date(b.paidAt) - new Date(a.paidAt),
+      );
+
+      res.status(200).send(allTransactions);
+    } catch (err) {
+      console.error("Error fetching transactions:", err);
       res.status(500).send({ success: false, message: err.message });
     }
   });
